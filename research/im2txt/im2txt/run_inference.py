@@ -60,7 +60,9 @@ def main(_):
   tf.logging.info("Running caption generation on %d files matching %s",
                   len(filenames), FLAGS.input_files)
 
-  with tf.Session(graph=g) as sess:
+  config = tf.ConfigProto()
+  config.gpu_options.allow_growth = True
+  with tf.Session(graph=g, config=config) as sess:
     # Load the model from checkpoint.
     restore_fn(sess)
 
