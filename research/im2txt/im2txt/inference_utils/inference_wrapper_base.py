@@ -70,7 +70,7 @@ class InferenceWrapperBase(object):
     """
     tf.logging.fatal("Please implement build_model in subclass")
 
-  def _create_restore_fn(self, checkpoint_path, saver):
+  def _create_restore_fn(self, checkpoint_path, saver=None):
     """Creates a function that restores a model from checkpoint.
 
     Args:
@@ -90,6 +90,24 @@ class InferenceWrapperBase(object):
       checkpoint_path = tf.train.latest_checkpoint(checkpoint_path)
       if not checkpoint_path:
         raise ValueError("No checkpoint file found in: %s" % checkpoint_path)
+
+    if saver is None:
+      # Optimistic restore.
+      # Source: https://github.com/tensorflow/tensorflow/issues/312.
+      reader = tf.train.NewCheckpointReader(checkpoint_path)
+      saved_shapes = reader.get_variable_to_shape_map()
+      var_names = sorted([(var.name, var.name.split(':')[0])
+        for var in tf.global_variables() if var.name.split(':')[0] in saved_shapes])
+      restore_vars = []
+      name2var = dict(zip(map(lambda x: x.name.split(':')[0],
+        tf.global_variables()), tf.global_variables()))
+      with tf.variable_scope('', reuse=True):
+        for _, saved_var_name in var_names:
+          curr_var = name2var[saved_var_name]
+          var_shape = curr_var.get_shape().as_list()
+          if var_shape == saved_shapes[saved_var_name]:
+            restore_vars.append(curr_var)
+      saver = tf.train.Saver(restore_vars)
 
     def _restore_fn(sess):
       tf.logging.info("Loading model from checkpoint: %s", checkpoint_path)
@@ -113,9 +131,8 @@ class InferenceWrapperBase(object):
     """
     tf.logging.info("Building model.")
     self.build_model(model_config)
-    saver = tf.train.Saver()
 
-    return self._create_restore_fn(checkpoint_path, saver)
+    return self._create_restore_fn(checkpoint_path)
 
   def build_graph_from_proto(self, graph_def_file, saver_def_file,
                              checkpoint_path):
